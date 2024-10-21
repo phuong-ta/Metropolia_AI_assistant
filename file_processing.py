@@ -1,7 +1,7 @@
 from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from models_setting import create_chat_llm, HuggingFace_embedding_model, OpenAI_embedding
+from models_setting import GoogleAI_llm, GoogleAI_embedding, HuggingFace_embedding_model, OpenAI_embedding
 from langchain_chroma import Chroma
 from typing import List
 import os
@@ -79,9 +79,10 @@ def create_db_from_files(file_path: str, file_name: str, description: str, db_di
 
 
 # read from vector data
-def read_vectors_db(db_directory):
+def read_vectors_db(db_directory) -> Chroma:
     db = Chroma(
          persist_directory = db_directory, # folder, where vectordb stored.
          embedding_function = OpenAI_embedding() # embedding model
          )
     return db
+    
