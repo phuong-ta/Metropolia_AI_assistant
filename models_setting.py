@@ -1,7 +1,7 @@
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 import os
 import getpass
 
@@ -51,4 +51,22 @@ def GoogleAI_llm():
         timeout=None,
         max_retries=2,
     )
+    return llm
+
+def OpenAI_llm():
+    if not os.environ.get("OPENAI_API_KEY"):
+        os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter your OpenAI API key: ")
+
+    llm = ChatOpenAI(
+        model="gpt-4o",
+        temperature=0,
+        max_tokens=None,
+        timeout=None,
+        max_retries=2,
+        # api_key="...",  # if you prefer to pass api key in directly instaed of using env vars
+        # base_url="...",
+        # organization="...",
+        # other params...
+    )
+
     return llm
