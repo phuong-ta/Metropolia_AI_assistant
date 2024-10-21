@@ -1,51 +1,87 @@
-from langchain_community.document_loaders import PyPDFLoader
-from langchain import hub
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from models_setting import create_chat_llm, HuggingFace_embedding_model, OpenAI_embedding
 from langchain_chroma import Chroma
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import OpenAIEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-import getpass
+from typing import List
 import os
-from langchain_openai import ChatOpenAI
 
 
-os.environ["API_KEY"] = getpass.getpass()
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+# load pdf files
+def load_documents(file_path: str, file_name: str) -> List:
+    """Load PDF documents from a directory."""
+    try:
+        loader = DirectoryLoader(file_path, glob=file_name, loader_cls=PyPDFLoader)
+        return loader.load()
+    except Exception as e:
+        print(f"Error loading files: {e}")
+        return []
 
-# load documents
-loader = PyPDFLoader("data/original data/AI-pilot general plan.pdf")
-docs = loader.load()
+# split text
+def split_texts(documents: List, chunk_size: int = 1500, chunk_overlap: int = 150) -> List:
+    """Split documents into chunks with the given chunk size and overlap."""
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    return text_splitter.split_documents(documents)
 
-#split docs
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-splits = text_splitter.split_documents(docs)
+#add metadata
+def add_metadata(chunks: List, file_name: str, description: str) -> List:
+    """Add metadata (file name and description) to each chunk."""
+    for chunk in chunks:
+        chunk.metadata = {
+            "name": file_name,
+            "description": description
+        }
+    return chunks
 
-# Embedding & vector store
-vectorstore = Chroma.from_documents(documents=splits, embedding=OpenAIEmbeddings())
-retriever = vectorstore.as_retriever()
+
+def save_vector_store(chunks: List, file_name: str, db_directory: str) -> Chroma:
+    """Create a vector store from the chunks and save it to the specified directory."""
+    persist_path = os.path.join(db_directory, file_name)
+    try:
+        db = Chroma.from_documents(
+            documents=chunks,
+            embedding=OpenAI_embedding(),
+            persist_directory=persist_path
+        )
+        return db
+    except Exception as e:
+        print(f"Error saving vector store: {e}")
+        return None
 
 
-# 2. Incorporate the retriever into a question-answering chain.
-system_prompt = (
-    "You are an assistant for question-answering tasks. "
-    "Use the following pieces of retrieved context to answer the question."
-    "If you don't know the answer, say that you don't know."
-    "\n\n"
-    "{context}"
-)
+def create_db_from_files(file_path: str, file_name: str, description: str, db_directory: str) -> Chroma:
+    """Main function to load files, split text, add metadata, and create a vector store."""
+    
+    # Remove the file extension if present (handle other extensions as well)
+    file_name = os.path.splitext(file_name)[0]
 
-prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", system_prompt),
-        ("human", "{input}"),
-    ]
-)
+    # Step 1: Load the PDF documents
+    documents = load_documents(file_path, f"{file_name}.pdf")
+    if not documents:
+        print("No documents were loaded. Exiting.")
+        return None
 
-question_answer_chain = create_stuff_documents_chain(llm, prompt)
-rag_chain = create_retrieval_chain(retriever, question_answer_chain)
+    # Step 2: Split the documents into text chunks
+    chunks = split_texts(documents)
 
-response = rag_chain.invoke({"input": "How many persons as a resource?"})
+    # Step 3: Add metadata to each chunk
+    chunks_with_metadata = add_metadata(chunks, file_name, description)
 
-print(response["answer"])
+    # Step 4: Save the chunks into a vector store
+    db = save_vector_store(chunks_with_metadata, file_name, db_directory)
+    
+    if db:
+        print(f"Vector store for {file_name} created successfully.")
+    else:
+        print(f"Failed to create vector store for {file_name}.")
+    
+    return db
+
+
+# read from vector data
+def read_vectors_db(db_directory):
+    db = Chroma(
+         persist_directory = db_directory, # folder, where vectordb stored.
+         embedding_function = OpenAI_embedding() # embedding model
+         )
+    return db
